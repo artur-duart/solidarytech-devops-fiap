@@ -1,0 +1,8 @@
+.git
+*.md
+.env
+.env.*
+.vscode/
+db/
+Dockerfile
+.dockerignore
