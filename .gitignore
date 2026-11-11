@@ -1,0 +1,14 @@
+outros/
+
+.env
+*.env
+!*.env.example
+
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+__pycache__/
+*.pyc
+.venv/
