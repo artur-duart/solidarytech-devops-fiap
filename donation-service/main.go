@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
@@ -8,10 +9,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 )
 
@@ -24,9 +25,13 @@ type Donation struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type EventPublisher interface {
+	SendMessage(ctx context.Context, params *sqs.SendMessageInput, optFns ...func(*sqs.Options)) (*sqs.SendMessageOutput, error)
+}
+
 type App struct {
 	DB          *sql.DB
-	SqsSvc      *sqs.SQS
+	SqsSvc      EventPublisher
 	SqsQueueURL string
 }
 
@@ -44,34 +49,49 @@ func main() {
 	}
 
 	db, err := sql.Open("pgx", dbURL)
-	if err != nil || db.Ping() != nil {
+	if err != nil {
+		log.Fatalf("Erro ao abrir a conexão com o banco de dados: %v", err)
+	}
+	if err := db.Ping(); err != nil {
 		log.Fatalf("Erro ao conectar ao banco de dados: %v", err)
 	}
 	log.Println("Conectado ao PostgreSQL (donation-service).")
 
-	var sqsSvc *sqs.SQS
+	var sqsSvc EventPublisher
 	queueURL := os.Getenv("AWS_SQS_URL")
 	region := os.Getenv("AWS_REGION")
 	if queueURL != "" && region != "" {
-		sess, _ := session.NewSession(&aws.Config{Region: aws.String(region)})
-		sqsSvc = sqs.New(sess)
+		cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(region))
+		if err != nil {
+			log.Fatalf("Erro ao carregar a configuração da AWS: %v", err)
+		}
+		sqsSvc = sqs.NewFromConfig(cfg)
 		log.Println("Integração com AWS SQS ativada.")
 	}
 
 	app := &App{DB: db, SqsSvc: sqsSvc, SqsQueueURL: queueURL}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", app.HealthHandler)
-	mux.HandleFunc("/donations", app.DonationHandler)
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           app.Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
 	log.Printf("donation-service rodando na porta %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(server.ListenAndServe())
+}
+
+func (a *App) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", a.HealthHandler)
+	mux.HandleFunc("/donations", a.DonationHandler)
+	return mux
 }
 
 func (a *App) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok","service":"donation-service"}`))
+	_, _ = w.Write([]byte(`{"status":"ok","service":"donation-service"}`))
 }
 
 func (a *App) DonationHandler(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +105,7 @@ func (a *App) DonationHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		d.Status = "APPROVED" // Simulação de gateway de pagamento
-		err := a.DB.QueryRow(
+		err := a.DB.QueryRowContext(r.Context(),
 			"INSERT INTO donations (ngo_id, amount, donor_name, status) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
 			d.NgoID, d.Amount, d.DonorName, d.Status,
 		).Scan(&d.ID, &d.CreatedAt)
@@ -97,16 +117,16 @@ func (a *App) DonationHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if a.SqsSvc != nil {
-			go a.sendNotificationEvent(d)
+			go a.sendNotificationEvent(context.WithoutCancel(r.Context()), d)
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(d)
+		_ = json.NewEncoder(w).Encode(d)
 		return
 	}
 
 	if r.Method == http.MethodGet {
-		rows, err := a.DB.Query("SELECT id, ngo_id, amount, donor_name, status, created_at FROM donations ORDER BY id DESC")
+		rows, err := a.DB.QueryContext(r.Context(), "SELECT id, ngo_id, amount, donor_name, status, created_at FROM donations ORDER BY id DESC")
 		if err != nil {
 			http.Error(w, `{"error":"Erro interno"}`, http.StatusInternalServerError)
 			return
@@ -116,20 +136,32 @@ func (a *App) DonationHandler(w http.ResponseWriter, r *http.Request) {
 		donations := []Donation{}
 		for rows.Next() {
 			var d Donation
-			rows.Scan(&d.ID, &d.NgoID, &d.Amount, &d.DonorName, &d.Status, &d.CreatedAt)
+			if err := rows.Scan(&d.ID, &d.NgoID, &d.Amount, &d.DonorName, &d.Status, &d.CreatedAt); err != nil {
+				log.Printf("Erro ao ler doação: %v", err)
+				http.Error(w, `{"error":"Erro interno"}`, http.StatusInternalServerError)
+				return
+			}
 			donations = append(donations, d)
 		}
 
-		json.NewEncoder(w).Encode(donations)
+		_ = json.NewEncoder(w).Encode(donations)
 		return
 	}
 
 	http.Error(w, `{"error":"Método não permitido"}`, http.StatusMethodNotAllowed)
 }
 
-func (a *App) sendNotificationEvent(d Donation) {
-	body, _ := json.Marshal(d)
-	_, err := a.SqsSvc.SendMessage(&sqs.SendMessageInput{
+func (a *App) sendNotificationEvent(parent context.Context, d Donation) {
+	body, err := json.Marshal(d)
+	if err != nil {
+		log.Printf("Falha ao serializar evento SQS: %v", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+
+	_, err = a.SqsSvc.SendMessage(ctx, &sqs.SendMessageInput{
 		MessageBody: aws.String(string(body)),
 		QueueUrl:    aws.String(a.SqsQueueURL),
 	})
