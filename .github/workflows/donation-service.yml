@@ -1,0 +1,25 @@
+name: donation-service CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "donation-service/**"
+      - ".github/workflows/donation-service.yml"
+      - ".github/workflows/reusable-go-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "donation-service/**"
+      - ".github/workflows/donation-service.yml"
+      - ".github/workflows/reusable-go-ci.yml"
+
+jobs:
+  ci:
+    uses: ./.github/workflows/reusable-go-ci.yml
+    permissions:
+      id-token: write
+      contents: write
+    with:
+      service: donation-service

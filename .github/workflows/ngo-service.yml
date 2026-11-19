@@ -1,0 +1,25 @@
+name: ngo-service CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ngo-service/**"
+      - ".github/workflows/ngo-service.yml"
+      - ".github/workflows/reusable-python-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ngo-service/**"
+      - ".github/workflows/ngo-service.yml"
+      - ".github/workflows/reusable-python-ci.yml"
+
+jobs:
+  ci:
+    uses: ./.github/workflows/reusable-python-ci.yml
+    permissions:
+      id-token: write
+      contents: write
+    with:
+      service: ngo-service
