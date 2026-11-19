@@ -1,7 +1,7 @@
-variable "github_repository" {
-  description = "Repositório do GitHub autorizado a assumir a role do CI."
+variable "github_oidc_subject_prefix" {
+  description = "Prefixo imutável do claim sub emitido pelo GitHub para o repositório (dono@id/repositorio@id)."
   type        = string
-  default     = "artur-duart/solidarytech-devops-fiap"
+  default     = "repo:artur-duart@79976674/solidarytech-devops-fiap@1454454741"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "github_actions_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = ["${var.github_oidc_subject_prefix}:ref:refs/heads/main"]
     }
   }
 }
