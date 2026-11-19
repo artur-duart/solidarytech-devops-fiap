@@ -63,7 +63,10 @@ def get_volunteers_by_ngo(ngo_id):
         response = table.scan(
             FilterExpression=boto3.dynamodb.conditions.Attr('ngo_id').eq(ngo_id)
         )
-        return jsonify(response.get('Items', [])), 200
+        voluntarios = response.get('Items', [])
+        for voluntario in voluntarios:
+            voluntario['ngo_id'] = int(voluntario['ngo_id'])
+        return jsonify(voluntarios), 200
     except Exception as e:
         log.error(f"Erro ao buscar dados no DynamoDB: {e}")
         return jsonify({"error": "Erro interno"}), 500
