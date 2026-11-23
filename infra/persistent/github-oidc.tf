@@ -35,7 +35,7 @@ data "aws_iam_policy_document" "github_actions_assume" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name               = "${lower(var.project)}-github-actions"
+  name               = "${module.finops_tags.name_prefix}-github-actions"
   assume_role_policy = data.aws_iam_policy_document.github_actions_assume.json
 }
 

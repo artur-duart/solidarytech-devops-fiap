@@ -5,7 +5,7 @@ locals {
 resource "aws_ecr_repository" "this" {
   for_each = local.services
 
-  name                 = "${lower(var.project)}/${each.value}"
+  name                 = "${module.finops_tags.name_prefix}/${each.value}"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
 
