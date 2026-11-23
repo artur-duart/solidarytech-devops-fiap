@@ -1,0 +1,44 @@
+name: gitops CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "gitops/**"
+      - ".github/workflows/gitops.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "gitops/**"
+      - ".github/workflows/gitops.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Renderizar com Kustomize
+        run: |
+          mkdir -p render/base render/apps
+          for dir in gitops/base/*/; do
+            kubectl kustomize "$dir" > "render/base/$(basename "$dir").yaml"
+          done
+          cp gitops/apps/*.yaml render/apps/
+
+      - name: Validar contra o schema do Kubernetes
+        run: |
+          docker run --rm -v "$PWD/render:/render:ro" ghcr.io/yannh/kubeconform:v0.8.0 \
+            -strict -summary -kubernetes-version 1.36.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /render
+
+      - name: Trivy (configuração insegura nos manifestos)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: render/base
+          severity: HIGH,CRITICAL
+          exit-code: "1"
