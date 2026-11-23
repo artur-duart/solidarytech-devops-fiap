@@ -22,9 +22,19 @@ Na nuvem, ninguém economiza o que não consegue ver. Para que cada real gasto p
 4. **Propagação para o que o Terraform não cria diretamente.** O `default_tags` não alcança recursos criados por outros sistemas em nome do Terraform. Esses três casos recebem as tags por outros caminhos:
    - instâncias EC2 dos nós do Kubernetes, criadas pelo Auto Scaling: tags no launch template do node group;
    - volumes EBS criados pelo Kubernetes: configuração de tags extras do driver EBS CSI;
-   - load balancer criado pelo Ingress: anotação `aws-load-balancer-additional-resource-tags`, que o módulo já entrega pronta no output `kubernetes_annotation`.
+   - load balancer criado pelo Ingress: o AWS Load Balancer Controller aplica as tags, pela opção `defaultTags`, em tudo o que cria na AWS (load balancer, target groups e security groups).
 5. **Ativação no faturamento.** Uma tag só aparece no Cost Explorer depois de ativada como *cost allocation tag*. A ativação também é feita por Terraform, na stack `persistent`, para todas as chaves do dicionário.
-6. **Fiscalização contínua.** O pipeline de infraestrutura passa a reprovar mudanças que criem recursos sem as tags obrigatórias.
+6. **Fiscalização contínua.** O pipeline de infraestrutura ([`infra.yml`](../../.github/workflows/infra.yml)) roda o script [`verificar-politica-de-tags.py`](../../scripts/verificar-politica-de-tags.py) a cada mudança no Terraform e reprova a alteração quando uma stack deixa de usar o módulo, quando uma tag obrigatória é escrita à mão fora dele, ou quando a propagação para nós, volumes e load balancer é removida.
+
+## Guardrails de custo
+
+Além das tags, a stack `persistent` mantém três proteções financeiras sempre ligadas, todas como código em [`finops.tf`](../../infra/persistent/finops.tf):
+
+| Guardrail | O que vigia | Quando avisa |
+|---|---|---|
+| Budget de consumo bruto | o uso total da conta antes dos créditos, com teto mensal de US$ 40 | ao passar de 50% e de 100% do teto, e quando a previsão do mês ultrapassa o teto |
+| Budget de gasto real | o valor efetivamente cobrado, depois dos créditos | no primeiro centavo cobrado |
+| Detecção de anomalias | o custo dos recursos com a tag `Project=SolidaryTech` | quando um desvio do padrão de consumo tem impacto de US$ 3 ou mais |
 
 ## Custos que não aceitam tag
 
