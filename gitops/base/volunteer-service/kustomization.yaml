@@ -4,10 +4,10 @@ kind: Kustomization
 namespace: solidarytech
 
 resources:
-  - deployment.yaml
-  - config.yaml
+- deployment.yaml
+- config.yaml
 
 images:
 - name: 376903139600.dkr.ecr.us-east-1.amazonaws.com/solidarytech/volunteer-service
   newName: 376903139600.dkr.ecr.us-east-1.amazonaws.com/solidarytech/volunteer-service
-  newTag: bb32d98f308be477f42ccb25081dcc78f94da0fa
+  newTag: 449eee8ad1a5332c91bee2261c16b975a8b688bf
