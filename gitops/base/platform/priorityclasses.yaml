@@ -1,0 +1,15 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: solidarytech-critical
+value: 100000
+globalDefault: false
+description: Caminho critico das doacoes. E o ultimo a ser despejado quando faltar recurso no cluster.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: solidarytech-standard
+value: 10000
+globalDefault: false
+description: Servicos de apoio da SolidaryTech, despejados antes do caminho critico.

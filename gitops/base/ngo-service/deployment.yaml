@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ngo-service
+  labels:
+    app: ngo-service
+    app.kubernetes.io/part-of: solidarytech
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ngo-service
+  template:
+    metadata:
+      labels:
+        app: ngo-service
+        app.kubernetes.io/part-of: solidarytech
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: solidarytech-standard
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ngo-service
+          image: 376903139600.dkr.ecr.us-east-1.amazonaws.com/solidarytech/ngo-service:latest
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: ngo-config
+            - secretRef:
+                name: ngo-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
