@@ -1,0 +1,69 @@
+name: infra CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/verificar-politica-de-tags.py"
+      - ".trivyignore.yaml"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "scripts/verificar-politica-de-tags.py"
+      - ".trivyignore.yaml"
+      - ".github/workflows/infra.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [bootstrap, persistent, main]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+
+      - name: Formatação
+        run: terraform fmt -check -recursive infra
+
+      - name: Validação
+        working-directory: infra/${{ matrix.stack }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  tag-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Política de tags FinOps
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python scripts/verificar-politica-de-tags.py
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Trivy (configuração insegura no IaC)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra
+          severity: CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml

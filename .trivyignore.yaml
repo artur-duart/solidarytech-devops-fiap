@@ -1,0 +1,11 @@
+misconfigurations:
+  - id: AWS-0040
+    paths:
+      - "infra/main/**"
+      - "**/terraform-aws-modules/eks/**"
+    statement: "API do EKS publica, porem restrita ao IP de quem administra (endpoint_public_access_cidrs). Fechar totalmente exigiria VPN ou bastion, custo fixo sem retorno para o porte da SolidaryTech."
+  - id: AWS-0104
+    paths:
+      - "infra/main/**"
+      - "**/terraform-aws-modules/eks/**"
+    statement: "Os nos do EKS precisam de saida para a internet para baixar imagens e chamar as APIs da AWS. A entrada continua restrita."
